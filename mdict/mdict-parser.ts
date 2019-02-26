@@ -38,8 +38,8 @@ import {
     Scan
 } from './Scan'
 import {
-    Lookup
-} from './lookup'
+    Mdict
+} from './mdict'
 
 export interface HeaderSection {
     GeneratedByEngineVersion: string;
@@ -53,9 +53,10 @@ export interface HeaderSection {
     Description: string;
     Title: string;
     DataSourceFormat: string;
-    stylesheet: string;
+    StyleSheet: string;
     RegisterBy: string;
     RegCode: string;
+    StripKey: string;
 }
 
 export interface Keyword {
@@ -70,47 +71,48 @@ export interface Keyword {
 
 
 /**
- * Parse a MDict dictionary/resource file (mdx/mdd).
+ * Parse a MDictParser dictionary/resource file (mdx/mdd).
  * @param file a File/Blob object
- * @return Q.Promise<Lookup> | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: *} | never | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: (*|number)} | never | never> Promise object which will resolve to a lookup private.
+ * @return Q.Promise<Mdict> | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: *} | never | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: (*|number)} | never | never> Promise object which will resolve to a lookup private.
  */
-export class MDict {
-    KEY_INDEX; // keyword index array
+export class MDictParser {
+    file: File;
+    headerSection;
+    KEY_INDEX;
     RECORD_BLOCK_TABLE = createRecordBlockTable(); // record block table
     ext;
+    read;
     scan;
     adaptKey;
     private keywordIndexDecryptor;
-    stylesheet;
+    StyleSheet;
     slicedKeyBlock;
-    public lookup;
 
     constructor(file: File) {
         let pos = 0;
-        const read = readFile.bind(null, file);
+        this.file = file;
         this.ext = getExtension(file.name);
+        this.read = readFile.bind(null, this.file);
 
-        this.lookup = read(0, 4).then(async data => {
+        this.read(0, 4).then(async (data: ArrayBuffer) => {
             const headerLength = new DataView(data).getUint32(0);
-            const res = await read(4, headerLength + 48);
+            const res = await this.read(4, headerLength + 48);
             const headerRemainLen = await this.read_header_sect(res, headerLength);
             pos += headerRemainLen + 4;
             return this.read_keyword_summary(res, headerRemainLen);
         }).then(async (keyword: Keyword) => {
             pos += keyword.len;
-            const res = await read(pos, keyword.key_index_comp_len);
+            const res = await this.read(pos, keyword.key_index_comp_len);
             this.KEY_INDEX = await this.read_keyword_index(res, keyword);
 
             pos += keyword.key_index_comp_len;
-            this.slicedKeyBlock = read(pos, keyword.key_blocks_len);
+            this.slicedKeyBlock = this.read(pos, keyword.key_blocks_len);
 
             pos += keyword.key_blocks_len;
-            return this.read_record_summary(await read(pos, 32), pos)
-        }).then(async recordSummary => {
+            return this.read_record_summary(await this.read(pos, 32), pos)
+        }).then(async (recordSummary: { len: number; index_len: any; }) => {
             pos += recordSummary.len;
-            await this.read_record_block(await read(pos, recordSummary.index_len), recordSummary);
-
-            // LOOKUP[ext].description = attrs.Description
+            await this.read_record_block(await this.read(pos, recordSummary.index_len), recordSummary);
         });
     }
 
@@ -121,7 +123,7 @@ export class MDict {
      * @param len lenghth of header_str
      * @return [remained length of header section (header_str and checksum, = len + 4), original input]
      */
-    private read_header_sect(input, len) {
+    private read_header_sect(input: any, len: number) {
         let header_str = readUTF16(input, len).replace(/\0$/, ''); // need to remove tailing NUL
         // parse dictionary attributes
         let xml = parseXml(header_str).querySelector('Dictionary, Library_Data').attributes;
@@ -137,22 +139,23 @@ export class MDict {
             Description: '',
             Title: '',
             DataSourceFormat: '',
-            stylesheet: '',
+            StyleSheet: '',
             RegisterBy: '',
             RegCode: '',
+            StripKey:''
         };
         for (let i = 0, item; i < xml.length; i++) {
             item = xml.item(i);
             attrs[item.nodeName] = item.nodeValue;
         }
-
+        this.headerSection = attrs;
         attrs.Encrypted = parseInt(String(attrs.Encrypted), 10) || 0;
 
         this.scan = new Scan(attrs);
         if (attrs.Encrypted & 0x02) this.keywordIndexDecryptor = decrypt;
 
         this.adaptKey = getAdaptKey(attrs, this.ext);
-        this.stylesheet = getGlobalStyle(attrs.stylesheet);
+        this.StyleSheet = getGlobalStyle(attrs.StyleSheet);
         return len + 4;
     }
 
@@ -163,7 +166,7 @@ export class MDict {
      * @param offset start position of keyword section in sliced file, equals to length of header string plus checksum.\
      * @return {num_blocks: *, num_entries: *, key_index_decomp_len: *, key_index_comp_len: *, key_blocks_len: *, chksum: *, len: number} object
      */
-    private read_keyword_summary(input, offset): Keyword {
+    private read_keyword_summary(input: any, offset: number): Keyword {
         const scanner = this.scan.init(input).forward(offset);
         return {
             num_blocks: scanner.readNum(),
@@ -185,7 +188,7 @@ export class MDict {
      * @param keyword_summary
      * @return [keyword_summary, array of keyword index]
      */
-    private read_keyword_index(input, keyword_summary: Keyword) {
+    private read_keyword_index(input: any, keyword_summary: Keyword) {
         let scanner = this.scan.init(input).readBlock(keyword_summary.key_index_comp_len, keyword_summary.key_index_decomp_len, this.keywordIndexDecryptor),
             keyword_index = Array(keyword_summary.num_blocks),
             offset = 0;
@@ -217,7 +220,7 @@ export class MDict {
      * @param pos begining of record section
      * @returj record summary object
      */
-    private read_record_summary(input, pos) {
+    private read_record_summary(input: any, pos: number) {
         let scanner = this.scan.init(input),
             record_summary = {
                 num_blocks: scanner.readNum(),
@@ -241,7 +244,7 @@ export class MDict {
      * @param input sliced file, start = begining of record block index, length = record_summary.index_len
      * @param record_summary record summary object
      */
-    private read_record_block(input, record_summary) {
+    private read_record_block(input: any, record_summary: { len?: number; index_len?: any; num_blocks?: any; block_pos?: any; }) {
         let scanner = this.scan.init(input),
             size = record_summary.num_blocks,
             record_index = Array(size),

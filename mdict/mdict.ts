@@ -1,25 +1,21 @@
-import {
-    resolve,
-    parseRes
-} from "./util";
-import {MDict} from "./mdict-parser";
+import {resolve, parseRes} from "./util";
+import {MDictParser} from "./mdict-parser";
 
-export class Lookup extends MDict {
+export type WordList = Promise<Array<{ word: string, offset: number }>>
+
+export class Mdict extends MDictParser {
     cached_keys; // cache latest keys
-    read;
     mutual_ticket = 0;// a oneway increased ticket used to cancel unfinished pattern match
     trail = null;// store latest visited record block & position when search for candidate keys
-    public getWordList: Function;
 
-    constructor(file) {
+    constructor(file: File) {
         super(file);
-        this.getWordList = this.ext === 'mdx' ? this.mdx : this.mdd;
     }
 
     /**
      * Reduce the key index array to an element which contains or is the nearest one matching a given phrase.
      */
-    reduce(arr, phrase) {
+    private reduce(arr, phrase) {
         let len = arr.length;
         if (len > 1) {
             len = len >> 1;
@@ -34,7 +30,7 @@ export class Lookup extends MDict {
     /**
      * Reduce the array to index of an element which contains or is the nearest one matching a given phrase.
      */
-    shrink(arr, phrase) {
+    private shrink(arr, phrase) {
         let len = arr.length,
             sub;
         if (len > 1) {
@@ -57,7 +53,7 @@ export class Lookup extends MDict {
      * Load keys for a keyword index object from mdx/mdd file.
      * @param kdx keyword index object
      */
-    loadKeys(kdx) {
+    private loadKeys(kdx): WordList {
         if (this.cached_keys && this.cached_keys.pilot === kdx.first_word) {
             return resolve(this.cached_keys.list);
         } else {
@@ -69,12 +65,14 @@ export class Lookup extends MDict {
 
                 for (let i = 0; i < kdx.num_entries; i++) {
                     let offset = scanner.readNum();
-                    list[i] = Object(scanner.readText());
-                    list[i].offset = offset;
+                    list[i] = {
+                        word: scanner.readText(),
+                        offset
+                    };
                     if (i > 0) list[i - 1].size = offset - list[i - 1].offset;
                 }
                 this.cached_keys = {
-                    list: list,
+                    list,
                     pilot: kdx.first_word
                 };
                 return list;
@@ -85,7 +83,7 @@ export class Lookup extends MDict {
     /**
      * Search for the first keyword match given phrase.
      */
-    seekVanguard(phrase) {
+    private seekVanguard(phrase) {
         phrase = this.adaptKey(phrase);
         let kdx = this.reduce(this.KEY_INDEX, phrase);
 
@@ -117,7 +115,7 @@ export class Lookup extends MDict {
     /**
      * Append more to word list according to a filter or expected size.
      */
-    appendMore(word, list, nextKdx, expectedSize, filter, ticket) {
+    private appendMore(word, list, nextKdx, expectedSize, filter, ticket) {
         if (ticket !== this.mutual_ticket) throw 'force terminated';
 
         if (filter) {
@@ -156,14 +154,14 @@ export class Lookup extends MDict {
         }
     }
 
-    followUp() {
+    private followUp() {
         let kdx = this.KEY_INDEX[this.trail.block];
         return this.loadKeys(kdx).then(list => {
             return [kdx, Math.min(this.trail.offset + this.trail.pos, list.length - 1), list];
         });
     }
 
-    matchKeys(phrase, expectedSize = 0, follow) {
+    private matchKeys(phrase: string, expectedSize = 0, follow: boolean) {
         let filter;
         expectedSize = Math.max(expectedSize, 10);
         let str = phrase.trim().toLowerCase(),
@@ -171,7 +169,10 @@ export class Lookup extends MDict {
             word;
         if (m) {
             word = m[1];
-            const wildcard = new RegExp('^' + str.replace(/([\.\\\+\[\^\]\$\(\)])/g, '\\$1').replace(/\*+/g, '.*').replace(/\?/g, '.') + '$'),
+            const wildcard = new RegExp('^' +
+                str.replace(/([.\\+\[^\]$()])/g, '\\$1')
+                    .replace(/\*+/g, '.*')
+                    .replace(/\?/g, '.') + '$'),
                 tester = phrase[phrase.length - 1] === ' ' ? s => wildcard.test(s) : s => wildcard.test(s) && !/ /.test(s);
             filter = (s, i) => {
                 if (this.trail.count < expectedSize && tester(s)) {
@@ -221,7 +222,7 @@ export class Lookup extends MDict {
     /**
      * Match the first element in list with given offset.
      */
-    matchOffset(list, offset) {
+    private matchOffset(list, offset) {
         return list.some(el => {
             el.offset === offset ? list = [el] : false;
         }) ? list : [];
@@ -234,7 +235,7 @@ export class Lookup extends MDict {
      * @param offset
      * @return definition in text
      */
-    readDefinition(input, block, offset) {
+    private readDefinition(input, block, offset) {
         let scanner = this.scan.init(input).readBlock(block.comp_size, block.decomp_size);
         scanner.forward(offset - block.decomp_offset);
         return scanner.readText();
@@ -245,10 +246,10 @@ export class Lookup extends MDict {
      * @param definition maybe starts with "@@@LINK=" which links to another keyword
      * @return resolved actual definition
      */
-    redirects(definition) {
+    private async redirects(definition: string) {
         return (definition.substring(0, 8) !== '@@@LINK=') ?
             definition :
-            this.mdx(definition.substring(8));
+            await this.mdx(definition.substring(8));
     }
 
     /**
@@ -258,7 +259,7 @@ export class Lookup extends MDict {
      * @param keyInfo a object with property of record's offset and optional size for the given keyword
      * @return an ArrayBuffer containing resource of image/audio/css/font etc.
      */
-    read_object(input, block, keyInfo) {
+    private read_object(input, block, keyInfo) {
         if (input.byteLength > 0) {
             let scanner = this.scan.init(input).readBlock(block.comp_size, block.decomp_size);
             scanner.forward(keyInfo.offset - block.decomp_offset);
@@ -268,34 +269,18 @@ export class Lookup extends MDict {
         }
     }
 
-
-    /**
-     * Find word definition for given keyinfo object.
-     * @return Q.Promise<resolved> | never> | never> promise object which will resolve to definition in text. Link to other keyword is followed to get actual definition.
-     * @param offset
-     */
-    getDefinition(offset) {
-        let block = this.RECORD_BLOCK_TABLE.find(offset);
-        return this.read(block.comp_offset, block.comp_size).then(data => {
-            return this.readDefinition(data, block, offset);
-        }).then(definition => {
-            if (this.stylesheet.length) definition = parseRes(definition, this.stylesheet);
-            return this.redirects(definition)
-        });
-    }
-
     /**
      * Find resource (image, sound etc.) for given keyinfo object.
      * @param keyInfo a object with property of record's offset and optional size for the given keyword
      * @return a promise object which will resolve to an ArrayBuffer containing resource of image/audio/css/font etc.
      * TODO: Follow link, maybe it's too expensive and a rarely used feature?
      */
-    async findResource(keyInfo) {
+    private async findResource(keyInfo) {
         let block = this.RECORD_BLOCK_TABLE.find(keyInfo.offset);
         return await this.read(block.comp_offset, block.comp_size).then(res => this.read_object(res, block, keyInfo))
     }
 
-    mdx(query, offset?) {
+    private mdx(query, offset?) {
         if (typeof query === 'string' || query instanceof String) {
             this.trail = null;
             let word = query.trim().toLowerCase();
@@ -311,7 +296,7 @@ export class Lookup extends MDict {
     }
 
     // TODO: chain multiple mdd file
-    mdd(query) {
+    private mdd(query: string) {
         let word = query.trim().toLowerCase();
         word = '\\' + word.replace(/(^[/\\])|([/]$)/, '');
         word = word.replace(/\//g, '\\');
@@ -323,6 +308,25 @@ export class Lookup extends MDict {
             } else {
                 return this.findResource(candidates[0]);
             }
+        });
+    }
+
+    public getWordList(query, offset?): WordList {
+        return this.ext === 'mdx' ? this.mdx(query, offset) : this.mdd(query);
+    }
+
+    /**
+     * Find word definition for given keyinfo object.
+     * @return Q.Promise<resolved> | never> | never> promise object which will resolve to definition in text. Link to other keyword is followed to get actual definition.
+     * @param offset
+     */
+    public getDefinition(offset): Promise<string> {
+        let block = this.RECORD_BLOCK_TABLE.find(offset);
+        return this.read(block.comp_offset, block.comp_size).then((data: any) => {
+            return this.readDefinition(data, block, offset);
+        }).then((definition: string) => {
+            if (this.StyleSheet.length) definition = parseRes(definition, this.StyleSheet);
+            return this.redirects(definition)
         });
     }
 }

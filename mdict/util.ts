@@ -1,8 +1,10 @@
-export function resolve(value) {
+import {HeaderSection} from "./mdict-parser";
+
+export function resolve(value: any[]) {
     return Promise.resolve(value);
 }
 
-export async function readFile(file, offset, len) {
+export async function readFile(file: Blob, offset: number, len: number) {
     return new Promise(resolve => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -12,9 +14,7 @@ export async function readFile(file, offset, len) {
     });
 }
 
-export const getExtension = (filename) => {
-    return /(?:\.([^.]+))?$/.exec(filename)[1];
-};
+export const getExtension = filename => /(?:\.([^.]+))?$/.exec(filename)[1];
 
 export const REGEXP_STRIPKEY = {
     'mdx': /[()., '/\\@_-]()/g,
@@ -35,7 +35,7 @@ export function readUTF16(buf, len) {
     return new TextDecoder('utf-16le').decode(new Uint8Array(buf, 0, len));
 }
 
-export function getAdaptKey(attrs, ext) {
+export function getAdaptKey(attrs: HeaderSection, ext) {
     let regexp = REGEXP_STRIPKEY[ext];
     if (isTrue(attrs.KeyCaseSensitive)) {
         return key => isTrue(attrs.StripKey) ? key.replace(regexp, '$1') : key;
@@ -62,17 +62,17 @@ export function createRecordBlockTable() {
         arr;     // backed Uint32Array
     return {
         // Allocate required ArrayBuffer for storing record block table, where len is number of record blocks.
-        alloc: function (len) {
+        alloc: function (len: number) {
             arr = new Uint32Array(len * 2);
         },
         // Store offset pair value (compressed & decompressed) for a record block
         // NOTE: offset_comp is absolute offset counted from start of mdx/mdd file.
-        put: function (offset_comp, offset_decomp) {
+        put: function (offset_comp: any, offset_decomp: any) {
             arr[pos++] = offset_comp;
             arr[pos++] = offset_decomp;
         },
         // Given offset of a keyword after decompression, return a record block info containing it, else undefined if not found.
-        find: function (keyAt) {
+        find: function (keyAt: number) {
             let hi = (arr.length >> 1) - 1, lo = 0, i = (lo + hi) >> 1, val = arr[(i << 1) + 1];
 
             if (keyAt > arr[(hi << 1) + 1] || keyAt < 0) return;
@@ -100,7 +100,7 @@ export function createRecordBlockTable() {
     };
 }
 
-export function getGlobalStyle(stylesheet) {
+export function getGlobalStyle(stylesheet: string) {
     let res = [], i = 0;
     stylesheet.split(' ').forEach(e => {
         if (!e) return;
@@ -115,12 +115,12 @@ export function getGlobalStyle(stylesheet) {
     return res;
 }
 
-export function parseRes(str, style) {
+export function parseRes(str: string, style) {
     let result = '';
-    str = str.split('`');
-    for (let k = 0; k < str.length; k++) {
-        let num = Number(str[k]);
-        if (str[k] && num) result += (style[num][0] + str[++k] + style[num][1])
+    let split = str.split('`');
+    for (let k = 0; k < split.length; k++) {
+        let num = Number(split[k]);
+        if (split[k] && num) result += (style[num][0] + split[++k] + style[num][1])
     }
 
     return result;
