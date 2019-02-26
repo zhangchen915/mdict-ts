@@ -23,29 +23,96 @@
  *       However keyword index encryption is common and supported.
  */
 import {
-    conseq,
     parseXml,
     readFile,
     getAdaptKey,
     createRecordBlockTable,
     getExtension,
-    readUTF16, getGlobalStyle
+    readUTF16,
+    getGlobalStyle
 } from './util'
-import {decrypt} from './crypt'
-import {Scan} from './Scan'
-import {Lookup} from './lookup'
+import {
+    decrypt
+} from './crypt'
+import {
+    Scan
+} from './Scan'
+import {
+    Lookup
+} from './lookup'
+
+export interface HeaderSection {
+    GeneratedByEngineVersion: string;
+    RequiredEngineVersion: string;
+    Encrypted: number;
+    Format: string;
+    CreationDate: string;
+    Compact: string;
+    Compat: string;
+    KeyCaseSensitive: string;
+    Description: string;
+    Title: string;
+    DataSourceFormat: string;
+    stylesheet: string;
+    RegisterBy: string;
+    RegCode: string;
+}
+
+export interface Keyword {
+    num_blocks: number,
+    num_entries: number,
+    key_index_decomp_len: number,
+    key_index_comp_len: number,
+    key_blocks_len: number,
+    chksum: number,
+    len: number,
+}
+
 
 /**
  * Parse a MDict dictionary/resource file (mdx/mdd).
  * @param file a File/Blob object
- * @return Q.Promise<Lookup> | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: *} | never | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: (*|number)} | never | never> Promise object which will resolve to a lookup function.
+ * @return Q.Promise<Lookup> | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: *} | never | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: (*|number)} | never | never> Promise object which will resolve to a lookup private.
  */
-export function parse_mdict(file) {
-    let KEY_INDEX,                                       // keyword index array
-        RECORD_BLOCK_TABLE = createRecordBlockTable();   // record block table
-    const ext = getExtension(file.name);
-    let scan;
-    let _adaptKey, _keywordIndexDecryptor, stylesheet, slicedKeyBlock;
+export class MDict {
+    KEY_INDEX; // keyword index array
+    RECORD_BLOCK_TABLE = createRecordBlockTable(); // record block table
+    ext;
+    scan;
+    adaptKey;
+    private keywordIndexDecryptor;
+    stylesheet;
+    slicedKeyBlock;
+    public lookup;
+
+    constructor(file: File) {
+        let pos = 0;
+        const read = readFile.bind(null, file);
+        this.ext = getExtension(file.name);
+
+        this.lookup = read(0, 4).then(async data => {
+            const headerLength = new DataView(data).getUint32(0);
+            const res = await read(4, headerLength + 48);
+            const headerRemainLen = await this.read_header_sect(res, headerLength);
+            pos += headerRemainLen + 4;
+            return this.read_keyword_summary(res, headerRemainLen);
+        }).then(async (keyword: Keyword) => {
+            pos += keyword.len;
+            const res = await read(pos, keyword.key_index_comp_len);
+            this.KEY_INDEX = await this.read_keyword_index(res, keyword);
+
+            pos += keyword.key_index_comp_len;
+            this.slicedKeyBlock = read(pos, keyword.key_blocks_len);
+
+            pos += keyword.key_blocks_len;
+            return this.read_record_summary(await read(pos, 32), pos)
+        }).then(async recordSummary => {
+            pos += recordSummary.len;
+            await this.read_record_block(await read(pos, recordSummary.index_len), recordSummary);
+
+            // LOOKUP[ext].description = attrs.Description
+        });
+    }
 
     /**
      * Read header section, parse dictionary attributes and config scanner according to engine version attribute.
@@ -54,23 +121,38 @@ export function parse_mdict(file) {
      * @param len lenghth of header_str
      * @return [remained length of header section (header_str and checksum, = len + 4), original input]
      */
-    function read_header_sect(input, len) {
+    private read_header_sect(input, len) {
         let header_str = readUTF16(input, len).replace(/\0$/, ''); // need to remove tailing NUL
         // parse dictionary attributes
         let xml = parseXml(header_str).querySelector('Dictionary, Library_Data').attributes;
-        let attrs = {};
+        let attrs: HeaderSection = {
+            GeneratedByEngineVersion: '',
+            RequiredEngineVersion: '',
+            Encrypted: 0,
+            Format: '',
+            CreationDate: '',
+            Compact: '',
+            Compat: '',
+            KeyCaseSensitive: '',
+            Description: '',
+            Title: '',
+            DataSourceFormat: '',
+            stylesheet: '',
+            RegisterBy: '',
+            RegCode: '',
+        };
         for (let i = 0, item; i < xml.length; i++) {
             item = xml.item(i);
             attrs[item.nodeName] = item.nodeValue;
         }
 
-        attrs.Encrypted = parseInt(attrs.Encrypted, 10) || 0;
+        attrs.Encrypted = parseInt(String(attrs.Encrypted), 10) || 0;
 
-        scan = new Scan(attrs);
-        if (attrs.Encrypted & 0x02) _keywordIndexDecryptor = decrypt;
+        this.scan = new Scan(attrs);
+        if (attrs.Encrypted & 0x02) this.keywordIndexDecryptor = decrypt;
 
-        _adaptKey = getAdaptKey(attrs, ext);
-        stylesheet = getGlobalStyle(attrs.StyleSheet);
+        this.adaptKey = getAdaptKey(attrs, this.ext);
+        this.stylesheet = getGlobalStyle(attrs.stylesheet);
         return len + 4;
     }
 
@@ -81,17 +163,17 @@ export function parse_mdict(file) {
      * @param offset start position of keyword section in sliced file, equals to length of header string plus checksum.\
      * @return {num_blocks: *, num_entries: *, key_index_decomp_len: *, key_index_comp_len: *, key_blocks_len: *, chksum: *, len: number} object
      */
-    function read_keyword_summary(input, offset) {
-        const scanner = scan.init(input).forward(offset);
+    private read_keyword_summary(input, offset): Keyword {
+        const scanner = this.scan.init(input).forward(offset);
         return {
             num_blocks: scanner.readNum(),
             num_entries: scanner.readNum(),
-            key_index_decomp_len: scanner.v2 && scanner.readNum(),  // Ver >= 2.0 only
+            key_index_decomp_len: scanner.v2 && scanner.readNum(), // Ver >= 2.0 only
             key_index_comp_len: scanner.readNum(),
             key_blocks_len: scanner.readNum(),
             chksum: scanner.checksumV2(),
             // extra field
-            len: scanner.offset - offset,  // actual length of keyword section, letying with engine version attribute
+            len: scanner.offset - offset, // actual length of keyword section, letying with engine version attribute
         };
     }
 
@@ -103,25 +185,25 @@ export function parse_mdict(file) {
      * @param keyword_summary
      * @return [keyword_summary, array of keyword index]
      */
-    function read_keyword_index(input, keyword_summary) {
-        let scanner = scan.init(input).readBlock(keyword_summary.key_index_comp_len, keyword_summary.key_index_decomp_len, _keywordIndexDecryptor),
+    private read_keyword_index(input, keyword_summary: Keyword) {
+        let scanner = this.scan.init(input).readBlock(keyword_summary.key_index_comp_len, keyword_summary.key_index_decomp_len, this.keywordIndexDecryptor),
             keyword_index = Array(keyword_summary.num_blocks),
             offset = 0;
 
         for (let i = 0, size; i < keyword_summary.num_blocks; i++) {
             keyword_index[i] = {
-                num_entries: conseq(scanner.readNum(), size = scanner.readShort()),
+                num_entries: [scanner.readNum(), size = scanner.readShort()][0],
                 // UNUSED, can be ignored
                 //          first_size:  size = scanner.readShort(),
-                first_word: conseq(scanner.readTextSized(size), size = scanner.readShort()),
+                first_word: [scanner.readTextSized(size), size = scanner.readShort()][0],
                 // UNUSED, can be ignored
                 //          last_size:   size = scanner.readShort(),
                 last_word: scanner.readTextSized(size),
                 comp_size: size = scanner.readNum(),
                 decomp_size: scanner.readNum(),
                 // extra fields
-                offset: offset,     // offset of the first byte for the target key block in mdx/mdd file
-                index: i            // index of this key index, used to search previous/next block
+                offset: offset, // offset of the first byte for the target key block in mdx/mdd file
+                index: i // index of this key index, used to search previous/next block
             };
             offset += size;
         }
@@ -135,15 +217,16 @@ export function parse_mdict(file) {
      * @param pos begining of record section
      * @returj record summary object
      */
-    function read_record_summary(input, pos) {
-        let scanner = scan.init(input),
+    private read_record_summary(input, pos) {
+        let scanner = this.scan.init(input),
             record_summary = {
                 num_blocks: scanner.readNum(),
                 num_entries: scanner.readNum(),
                 index_len: scanner.readNum(),
                 blocks_len: scanner.readNum(),
                 // extra field
-                len: scanner.offset,   // actual length of record section (excluding record block index), letying with engine version attribute
+                len: scanner.offset, // actual length of record section (excluding record block index), letying with engine version attribute
+                block_pos: 0
             };
 
         // start position of record block from head of mdx/mdd file
@@ -153,60 +236,28 @@ export function parse_mdict(file) {
     }
 
     /**
-     * Read record block index part in record section, and fill RECORD_BLOCK_TABLE
+     * Read record block index part in record section, and fill this.RECORD_BLOCK_TABLE
      * @see https://github.com/zhansliu/writemdict/blob/master/fileformat.md#record-section
      * @param input sliced file, start = begining of record block index, length = record_summary.index_len
      * @param record_summary record summary object
      */
-    function read_record_block(input, record_summary) {
-        let scanner = scan.init(input),
+    private read_record_block(input, record_summary) {
+        let scanner = this.scan.init(input),
             size = record_summary.num_blocks,
             record_index = Array(size),
             p0 = record_summary.block_pos,
             p1 = 0;
 
-        RECORD_BLOCK_TABLE.alloc(size + 1);
+        this.RECORD_BLOCK_TABLE.alloc(size + 1);
         for (let i = 0, rdx; i < size; i++) {
             record_index[i] = rdx = {
                 comp_size: scanner.readNum(),
                 decomp_size: scanner.readNum()
             };
-            RECORD_BLOCK_TABLE.put(p0, p1);
+            this.RECORD_BLOCK_TABLE.put(p0, p1);
             p0 += rdx.comp_size;
             p1 += rdx.decomp_size;
         }
-        RECORD_BLOCK_TABLE.put(p0, p1);
+        this.RECORD_BLOCK_TABLE.put(p0, p1);
     }
-
-
-    // ------------------------------------------
-    // start to load mdx/mdd file
-    // ------------------------------------------
-    let pos = 0;
-    const read = readFile.bind(null, file);
-
-    return read(0, 4).then(data => {
-        return new DataView(data).getUint32(0);
-    }).then(async headerLength => {
-        const res = await read(4, headerLength + 48);
-        const headerRemainLen = await read_header_sect(res, headerLength);
-        pos += headerRemainLen + 4;
-        return read_keyword_summary(res, headerRemainLen);
-    }).then(async keyword => {
-        pos += keyword.len;
-        const res = await read(pos, keyword.key_index_comp_len);
-        KEY_INDEX = await read_keyword_index(res, keyword);
-
-        pos += keyword.key_index_comp_len;
-        slicedKeyBlock = read(pos, keyword.key_blocks_len);
-
-        pos += keyword.key_blocks_len;
-        return read_record_summary(await read(pos, 32), pos)
-    }).then(async recordSummary => {
-        pos += recordSummary.len;
-        await read_record_block(await read(pos, recordSummary.index_len), recordSummary);
-
-        // LOOKUP[ext].description = attrs.Description;
-        return new Lookup(read, RECORD_BLOCK_TABLE, _adaptKey, slicedKeyBlock, KEY_INDEX, scan, stylesheet, ext)
-    });
 }

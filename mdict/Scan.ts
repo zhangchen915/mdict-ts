@@ -1,11 +1,19 @@
-import {
-    conseq,
-} from './util'
-
 import {lzo} from '../lib/lzo1x';
-import pako from 'pako'
+import {inflate} from 'pako';
 
 export class Scan {
+    private readonly searchTextLen: (dv, offset) => (number | number);
+    private decoder: TextDecoder;
+    private readonly bpu: number;
+    private readShort: () => any;
+    private readNum: () => any;
+    private readonly v2: boolean;
+    private dv: any;
+    private readonly tail: number;
+    private checksumV2: () => void;
+    private offset: number;
+    private buf: any;
+
     constructor(attrs) {
         attrs.Encoding = attrs.Encoding || 'UTF-16';
 
@@ -64,15 +72,15 @@ export class Scan {
     // MDict file format uses big endian to store number
     // 32-bit unsigned int
     readInt() {
-        return conseq(this.dv.getUint32(this.offset), this.forward(4));
+        return [this.dv.getUint32(this.offset), this.forward(4)][0];
     }
 
     readUint16() {
-        return conseq(this.dv.getUint16(this.offset), this.forward(2));
+        return [this.dv.getUint16(this.offset), this.forward(2)][0];
     }
 
     readUint8() {
-        return conseq(this.dv.getUint8(this.offset), this.forward(1));
+        return [this.dv.getUint8(this.offset), this.forward(1)][0];
     }
 
     // Read data to an Uint8Array and decode it to text with specified encoding.
@@ -80,7 +88,7 @@ export class Scan {
     // NOTE: After decoding the text, it is need to forward extra "tail" bytes according to specified encoding.
     readText() {
         let len = this.searchTextLen(this.dv, this.offset);
-        return conseq(this.decoder.decode(new Uint8Array(this.buf, this.offset, len)), this.forward(len + this.bpu));
+        return [this.decoder.decode(new Uint8Array(this.buf, this.offset, len)), this.forward(len + this.bpu)][0];
     }
 
     // Read data to an Uint8Array and decode it to text with specified encoding.
@@ -88,7 +96,7 @@ export class Scan {
     // NOTE: After decoding the text, it is need to forward extra "tail" bytes according to specified encoding.
     readTextSized(len) {
         len *= this.bpu;
-        return conseq(this.decoder.decode(new Uint8Array(this.buf, this.offset, len)), this.forward(len + this.tail));
+        return [this.decoder.decode(new Uint8Array(this.buf, this.offset, len)), this.forward(len + this.tail)][0];
     }
 
     // Skip checksum, just ignore it anyway.
@@ -99,7 +107,7 @@ export class Scan {
     // Read data block of keyword index, key block or record content.
     // These data block are maybe in compressed (gzip or lzo) format, while keyword index maybe be encrypted.
     // @see https://github.com/zhansliu/writemdict/blob/master/fileformat.md#compression (with typo mistake)
-    readBlock(len, expectedBufSize, decryptor) {
+    readBlock(len, expectedBufSize, decryptor?) {
         let comp_type = this.dv.getUint8(this.offset);  // compression type, 0 = non, 1 = lzo, 2 = gzip
         if (comp_type === 0) {
             if (this.v2) this.forward(8);  // for version >= 2, skip comp_type (4 bytes with tailing \x00) and checksum (4 bytes)
@@ -116,14 +124,14 @@ export class Scan {
                 tmp = decryptor(tmp, passkey);
             }
 
-            tmp = comp_type === 2 ? pako.inflate(tmp) : lzo.decompress(tmp, expectedBufSize, 1308672);
+            tmp = comp_type === 2 ? inflate(tmp) : lzo.decompress(tmp);
             this.forward(len);
-            return this.init(tmp.buffer, tmp.length);
+            return this.init(tmp.buffer);
         }
     }
 
     // Read raw data as Uint8Array from current this.offset with specified length in bytes
     readRaw(len) {
-        return conseq(new Uint8Array(this.buf, this.offset, len), this.forward(len === undefined ? this.buf.length - this.offset : len));
+        return [new Uint8Array(this.buf, this.offset, len), this.forward(len === undefined ? this.buf.length - this.offset : len)][0];
     }
 }

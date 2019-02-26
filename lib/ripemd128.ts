@@ -77,11 +77,12 @@ var DIGEST = 128,
     ];
 
 export default function ripemd128(data) {
-    var aa, bb, cc, dd, aaa, bbb, ccc, ddd, i, l, r, rr, t, tmp, x,
+    let aa, bb, cc, dd, aaa, bbb, ccc, ddd, i, l, r, rr, t, tmp, x,
         hash = new Uint32Array([0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476]),
         bytes = data.length;
 
-    var padding = new Uint8Array(((bytes % 64) < 56 ? 56 : 120) - (bytes % 64));
+    const padding = new Uint8Array(((bytes % 64) < 56 ? 56 : 120) - (bytes % 64));
+    // @ts-ignore
     padding[0] = [0x80];
 
     data = new Uint32Array(concat(data, padding).buffer);

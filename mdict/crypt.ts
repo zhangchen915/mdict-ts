@@ -7,7 +7,7 @@ import ripemd128 from '../lib/ripemd128';
  * @param key an ArrayBuffer holding decryption key, which will be supplied to ripemd128() before decryption
  * @return an ArrayBuffer carrying decrypted data, occupying the same memory space of source buffer
  */
-export function decrypt(buf, key) {
+export function decrypt(buf: Uint8Array, key) {
     key = ripemd128(key);
     let byte, keylen = key.length, prev = 0x36, i = 0, len = buf.length;
     for (; i < len; i++) {

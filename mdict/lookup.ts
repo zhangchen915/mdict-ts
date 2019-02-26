@@ -1,23 +1,19 @@
-import {resolve, parseRes} from "./util";
+import {
+    resolve,
+    parseRes
+} from "./util";
+import {MDict} from "./mdict-parser";
 
-let UNDEFINED = void 0;
-
-export class Lookup {
-    stylesheet;
+export class Lookup extends MDict {
     cached_keys; // cache latest keys
-    scan;
-    RECORD_BLOCK_TABLE;
     read;
-    adaptKey;
-    slicedKeyBlock;
-    KEY_INDEX;
-    mutual_ticket;
+    mutual_ticket = 0;// a oneway increased ticket used to cancel unfinished pattern match
+    trail = null;// store latest visited record block & position when search for candidate keys
+    public getWordList: Function;
 
-    constructor(read, RECORD_BLOCK_TABLE, adaptKey, slicedKeyBlock, KEY_INDEX, scan, stylesheet, ext) {
-        [this.read, this.RECORD_BLOCK_TABLE, this.adaptKey, this.slicedKeyBlock, this.KEY_INDEX, this.scan, this.stylesheet] = Array.from(arguments);
-        this.getWordList = ext === 'mdx' ? this.mdx : this.mdd;
-        this.trail = null;            // store latest visited record block & position when search for candidate keys
-        this.mutual_ticket = 0;       // a oneway increased ticket used to cancel unfinished pattern match
+    constructor(file) {
+        super(file);
+        this.getWordList = this.ext === 'mdx' ? this.mdx : this.mdd;
     }
 
     /**
@@ -27,9 +23,9 @@ export class Lookup {
         let len = arr.length;
         if (len > 1) {
             len = len >> 1;
-            return phrase > this.adaptKey(arr[len - 1].last_word)
-                ? this.reduce(arr.slice(len), phrase)
-                : this.reduce(arr.slice(0, len), phrase);
+            return phrase > this.adaptKey(arr[len - 1].last_word) ?
+                this.reduce(arr.slice(len), phrase) :
+                this.reduce(arr.slice(0, len), phrase);
         } else {
             return arr[0];
         }
@@ -39,7 +35,8 @@ export class Lookup {
      * Reduce the array to index of an element which contains or is the nearest one matching a given phrase.
      */
     shrink(arr, phrase) {
-        let len = arr.length, sub;
+        let len = arr.length,
+            sub;
         if (len > 1) {
             len = len >> 1;
             let key = this.adaptKey(arr[len]);
@@ -65,7 +62,8 @@ export class Lookup {
             return resolve(this.cached_keys.list);
         } else {
             return this.slicedKeyBlock.then(input => {
-                let scanner = this.scan.init(input), list = Array(kdx.num_entries);
+                let scanner = this.scan.init(input),
+                    list = Array(kdx.num_entries);
                 scanner.forward(kdx.offset);
                 scanner = scanner.readBlock(kdx.comp_size, kdx.decomp_size);
 
@@ -75,7 +73,10 @@ export class Lookup {
                     list[i].offset = offset;
                     if (i > 0) list[i - 1].size = offset - list[i - 1].offset;
                 }
-                this.cached_keys = {list: list, pilot: kdx.first_word};
+                this.cached_keys = {
+                    list: list,
+                    pilot: kdx.first_word
+                };
                 return list;
             });
         }
@@ -90,7 +91,8 @@ export class Lookup {
 
         // look back for the first record block containing keyword for the specified phrase
         if (phrase <= this.adaptKey(kdx.last_word)) {
-            let index = kdx.index - 1, prev;
+            let index = kdx.index - 1,
+                prev;
             while (prev = this.KEY_INDEX[index]) {
                 if (this.adaptKey(prev.last_word) !== this.adaptKey(kdx.last_word)) break;
                 kdx = prev;
@@ -156,18 +158,30 @@ export class Lookup {
 
     followUp() {
         let kdx = this.KEY_INDEX[this.trail.block];
-        return this.loadKeys(kdx).then(function (list) {
+        return this.loadKeys(kdx).then(list => {
             return [kdx, Math.min(this.trail.offset + this.trail.pos, list.length - 1), list];
         });
     }
 
     matchKeys(phrase, expectedSize = 0, follow) {
+        let filter;
         expectedSize = Math.max(expectedSize, 10);
         let str = phrase.trim().toLowerCase(),
             m = /([^?*]+)[?*]+/.exec(str),
             word;
         if (m) {
             word = m[1];
+            const wildcard = new RegExp('^' + str.replace(/([\.\\\+\[\^\]\$\(\)])/g, '\\$1').replace(/\*+/g, '.*').replace(/\?/g, '.') + '$'),
+                tester = phrase[phrase.length - 1] === ' ' ? s => wildcard.test(s) : s => wildcard.test(s) && !/ /.test(s);
+            filter = (s, i) => {
+                if (this.trail.count < expectedSize && tester(s)) {
+                    this.trail.count++;
+                    this.trail.total++;
+                    this.trail.pos = i + 1;
+                    return true;
+                }
+                return false;
+            };
         } else {
             word = phrase.trim();
         }
@@ -232,9 +246,9 @@ export class Lookup {
      * @return resolved actual definition
      */
     redirects(definition) {
-        return (definition.substring(0, 8) !== '@@@LINK=')
-            ? definition
-            : this.mdx(definition.substring(8));
+        return (definition.substring(0, 8) !== '@@@LINK=') ?
+            definition :
+            this.mdx(definition.substring(8));
     }
 
     /**
@@ -281,14 +295,14 @@ export class Lookup {
         return await this.read(block.comp_offset, block.comp_size).then(res => this.read_object(res, block, keyInfo))
     }
 
-    mdx(query) {
+    mdx(query, offset?) {
         if (typeof query === 'string' || query instanceof String) {
             this.trail = null;
-            let word = query.trim().toLowerCase(), offset = query.offset;
+            let word = query.trim().toLowerCase();
 
             return this.seekVanguard(word).then(([kdx, idx, list]) => {
                 list = list.slice(idx);
-                if (offset !== UNDEFINED) list = this.matchOffset(list, offset);
+                if (offset) list = this.matchOffset(list, offset);
                 return list;
             });
         } else {

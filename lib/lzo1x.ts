@@ -65,7 +65,7 @@ export let lzo = (function () {
             this.state.outputBuffer = this.out;
             this.cbl = this.out.length;
         },
-		
+
         match_next: function () {
             // if (op_end - op < t) return OUTPUT_OVERRUN;
             // if (ip_end - ip < t+3) return INPUT_OVERRUN;
@@ -260,7 +260,7 @@ export let lzo = (function () {
             this.m_pos = 0;
 
             this.skipToFirstLiteralFun = false;
-            
+
             let ret;
             // if (ip_end - ip < 1) return INPUT_OVERRUN;
             if (this.buf[this.ip] > 17) {
@@ -284,7 +284,7 @@ export let lzo = (function () {
                 if (!this.skipToFirstLiteralFun) {
                     // if (ip_end - ip < 3) return INPUT_OVERRUN;
                     this.t = this.buf[this.ip++];
-			
+
                     if (this.t >= 16) {
                         ret = this.match();
                         if (ret !== this.OK) {
@@ -575,11 +575,7 @@ export let lzo = (function () {
     let instance = new _lzo1x();
 
     return {
-        compress: function (state) {
-            return instance.compress(state);
-        },
-        decompress: function (state) {
-            return instance.decompress(state);
-        }
+        compress: state => instance.compress(state),
+        decompress: state => instance.decompress(state)
     };
 })();

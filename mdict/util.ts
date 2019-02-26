@@ -12,8 +12,8 @@ export async function readFile(file, offset, len) {
     });
 }
 
-export const getExtension = (filename, defaultExt) => {
-    return /(?:\.([^.]+))?$/.exec(filename)[1] || defaultExt;
+export const getExtension = (filename) => {
+    return /(?:\.([^.]+))?$/.exec(filename)[1];
 };
 
 export const REGEXP_STRIPKEY = {
@@ -24,10 +24,6 @@ export const REGEXP_STRIPKEY = {
 export function parseXml(xml) {
     let parser = new DOMParser();
     return parser.parseFromString(xml, "text/xml");
-}
-
-export function conseq() {
-    return arguments[0];
 }
 
 export function isTrue(v) {
