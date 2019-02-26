@@ -1,15 +1,18 @@
 {
   "name": "mdict-ts",
   "version": "1.0.0",
-  "description": "",
-  "main": "dist/lookup.js",
-  "types": "lib/lookup.d.ts",
+  "description": "mdict (*.mdx, *.mdd) file reader",
+  "main": "dist/mdict/mdict.js",
+  "types": "dist/mdict/mdict.d.ts",
   "files": [
     "dist/**/*"
   ],
   "keywords": [
     "mdict",
-    "ts"
+    "ts",
+    "dictionary",
+    "mdx",
+    "mdd"
   ],
   "repository": {
     "type": "git",
@@ -18,8 +21,12 @@
   "scripts": {
     "build": "tsc"
   },
-  "author": "zhangchen915",
-  "license": "ISC",
+  "author": "zhangchen915 <zhangchen915@outlook.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zhangchen915/mdict-ts/issues"
+  },
+  "homepage": "https://github.com/zhangchen915/mdict-ts",
   "dependencies": {
     "@types/pako": "^1.0.0",
     "pako": "^1.0.8"
