@@ -2,16 +2,29 @@
   "name": "mdict-ts",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
-  "directories": {
-    "lib": "lib"
+  "main": "dist/lookup.js",
+  "types": "lib/lookup.d.ts",
+  "files": [
+    "dist/**/*"
+  ],
+  "keywords": [
+    "mdict",
+    "ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com:zhangchen915/mdict-ts.git"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc"
   },
   "author": "zhangchen915",
   "license": "ISC",
   "dependencies": {
+    "@types/pako": "^1.0.0",
     "pako": "^1.0.8"
+  },
+  "devDependencies": {
+    "typescript": "^3.3.3333"
   }
 }
