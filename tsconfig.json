@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "outDir": "./dist/",
+    "sourceMap": false,
+    "noImplicitAny": false,
+    "module": "UMD",
+    "target": "es2015",
+    "removeComments": true
+  },
+  "include": [
+    "lib/*",
+    "mdict/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/*.spec.ts"
+  ]
+}
