@@ -1,0 +1,17 @@
+{
+  "name": "mdict-ts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "zhangchen915",
+  "license": "ISC",
+  "dependencies": {
+    "pako": "^1.0.8"
+  }
+}
