@@ -4,7 +4,7 @@
     "outDir": "./dist/",
     "sourceMap": false,
     "noImplicitAny": false,
-    "module": "UMD",
+    "module": "commonjs",
     "target": "es2015",
     "removeComments": true
   },
