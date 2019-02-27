@@ -38,9 +38,15 @@ export function readUTF16(buf, len) {
 export function getAdaptKey(attrs: HeaderSection, ext) {
     let regexp = REGEXP_STRIPKEY[ext];
     if (isTrue(attrs.KeyCaseSensitive)) {
-        return key => isTrue(attrs.StripKey) ? key.replace(regexp, '$1') : key;
+        return key => {
+            return isTrue(attrs.StripKey) ? key.replace(regexp, '$1') : key;
+        }
     } else {
-        return key => isTrue(attrs.StripKey || (this.v2 ? '' : 'yes')) ? key.toLowerCase().replace(regexp, '$1') : key.toLowerCase();
+        return key => {
+            return isTrue(attrs.StripKey || (this.v2 ? '' : 'yes')) ?
+                key.toLowerCase().replace(regexp, '$1') :
+                key.toLowerCase();
+        }
     }
 }
 

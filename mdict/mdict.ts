@@ -35,7 +35,7 @@ export class Mdict extends MDictParser {
             sub;
         if (len > 1) {
             len = len >> 1;
-            let key = this.adaptKey(arr[len]);
+            let key = this.adaptKey(arr[len].word);
             if (phrase < key) {
                 sub = arr.slice(0, len);
                 sub.pos = arr.pos;
@@ -45,7 +45,7 @@ export class Mdict extends MDictParser {
             }
             return this.shrink(sub, phrase);
         } else {
-            return (arr.pos || 0) + (phrase <= this.adaptKey(arr[0]) ? 0 : 1);
+            return (arr.pos || 0) + (phrase <= this.adaptKey(arr[0].word) ? 0 : 1);
         }
     }
 
@@ -102,7 +102,7 @@ export class Mdict extends MDictParser {
             let idx = this.shrink(list, phrase);
             // look back for the first matched keyword position
             while (idx > 0) {
-                if (this.adaptKey(list[--idx]) !== this.adaptKey(phrase)) {
+                if (this.adaptKey(list[--idx].word) !== this.adaptKey(phrase)) {
                     idx++;
                     break;
                 }
@@ -291,7 +291,7 @@ export class Mdict extends MDictParser {
                 return list;
             });
         } else {
-            return this.matchKeys(query.phrase, query.max, query.follow);
+            return this.matchKeys(query.word, query.max, query.follow);
         }
     }
 
