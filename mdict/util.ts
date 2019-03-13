@@ -1,16 +1,27 @@
 import {HeaderSection} from "./mdict-parser";
+const fs = require('fs');
+const TextDecoder = require('text-encoding').TextDecoder;
 
 export function resolve(value: any[]) {
     return Promise.resolve(value);
 }
 
-export async function readFile(file: Blob, offset: number, len: number) {
+export function newUint8Array(buf, offset, len) {
+    const ret = new Uint8Array(len);
+    buf.copy(ret, 0, offset, offset + len);
+    return ret;
+}
+
+export async function readFile(file, offset: number, len: number) {
     return new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            resolve(reader.result)
-        };
-        reader.readAsArrayBuffer(file.slice(offset, offset + len));
+        fs.open(file, 'r', (err, fd) => {
+            if (err) throw err;
+            const res = Buffer.alloc(len);
+            fs.read(fd, res, 0, len, offset, (err, bytesRead, buffer) => {
+                if (err) throw err;
+                resolve(buffer);
+            });
+        });
     });
 }
 
@@ -21,18 +32,13 @@ export const REGEXP_STRIPKEY = {
     'mdd': /([.][^.]*$)|[()., '/\\@_-]/g        // strip '.' before file extension that is keeping the last period
 };
 
-export function parseXml(xml) {
-    let parser = new DOMParser();
-    return parser.parseFromString(xml, "text/xml");
-}
-
 export function isTrue(v) {
     v = ((v || false) + '').toLowerCase();
     return v === 'yes' || v === 'true';
 }
 
 export function readUTF16(buf, len) {
-    return new TextDecoder('utf-16le').decode(new Uint8Array(buf, 0, len));
+    return new TextDecoder('utf-16le').decode(newUint8Array(buf, 0, len));
 }
 
 export function getAdaptKey(attrs: HeaderSection, ext) {

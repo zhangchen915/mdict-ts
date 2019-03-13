@@ -23,7 +23,6 @@
  *       However keyword index encryption is common and supported.
  */
 import {
-    parseXml,
     readFile,
     getAdaptKey,
     createRecordBlockTable,
@@ -40,6 +39,9 @@ import {
 import {
     Mdict
 } from './mdict'
+
+const DataView = require('buffer-dataview');
+const DOMParser = require('xmldom').DOMParser;
 
 export interface HeaderSection {
     GeneratedByEngineVersion: string;
@@ -76,7 +78,7 @@ export interface Keyword {
  * @return Q.Promise<Mdict> | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: *} | never | never>{num_blocks: *, num_entries: *, index_len: *, blocks_len: *, len: (*|number)} | never | never> Promise object which will resolve to a lookup private.
  */
 export class MDictParser {
-    file: File;
+    file: string;
     headerSection;
     KEY_INDEX;
     RECORD_BLOCK_TABLE = createRecordBlockTable(); // record block table
@@ -88,10 +90,10 @@ export class MDictParser {
     StyleSheet;
     slicedKeyBlock;
 
-    constructor(file: File) {
+    constructor(file: string) {
         let pos = 0;
         this.file = file;
-        this.ext = getExtension(file.name);
+        this.ext = getExtension(file);
         this.read = readFile.bind(null, this.file);
 
         this.read(0, 4).then(async (data: ArrayBuffer) => {
@@ -100,7 +102,7 @@ export class MDictParser {
             const headerRemainLen = await this.read_header_sect(res, headerLength);
             pos += headerRemainLen + 4;
             return this.read_keyword_summary(res, headerRemainLen);
-        }).then(async (keyword: Keyword) => {
+            }).then(async (keyword: Keyword) => {
             pos += keyword.len;
             const res = await this.read(pos, keyword.key_index_comp_len);
             this.KEY_INDEX = await this.read_keyword_index(res, keyword);
@@ -126,7 +128,10 @@ export class MDictParser {
     private read_header_sect(input: any, len: number) {
         let header_str = readUTF16(input, len).replace(/\0$/, ''); // need to remove tailing NUL
         // parse dictionary attributes
-        let xml = parseXml(header_str).querySelector('Dictionary, Library_Data').attributes;
+        // let xml = parseXml(header_str).getAttribute('Dictionary, Library_Data');
+        const doc = new DOMParser().parseFromString(header_str, 'text/xml');
+        let xml = doc.getElementsByTagName('Dictionary')[0];
+        if (!xml) xml = doc.getElementsByTagName('Library_Data')[0];
         let attrs: HeaderSection = {
             GeneratedByEngineVersion: '',
             RequiredEngineVersion: '',
@@ -142,10 +147,10 @@ export class MDictParser {
             StyleSheet: '',
             RegisterBy: '',
             RegCode: '',
-            StripKey:''
+            StripKey: ''
         };
-        for (let i = 0, item; i < xml.length; i++) {
-            item = xml.item(i);
+        for (let i = 0, item; i < xml.attributes.length; i++) {
+            item = xml.attributes[i];
             attrs[item.nodeName] = item.nodeValue;
         }
         this.headerSection = attrs;

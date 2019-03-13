@@ -8,7 +8,7 @@ export class Mdict extends MDictParser {
     mutual_ticket = 0;// a oneway increased ticket used to cancel unfinished pattern match
     trail = null;// store latest visited record block & position when search for candidate keys
 
-    constructor(file: File) {
+    constructor(file: string) {
         super(file);
     }
 
@@ -330,3 +330,5 @@ export class Mdict extends MDictParser {
         });
     }
 }
+
+module.exports = Mdict;

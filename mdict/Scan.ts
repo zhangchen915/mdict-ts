@@ -1,5 +1,9 @@
 import {lzo} from '../lib/lzo1x';
 import {inflate} from 'pako';
+import {newUint8Array} from "./util";
+
+const DataView = require('buffer-dataview');
+const TextDecoder = require('text-encoding').TextDecoder;
 
 export class Scan {
     private readonly searchTextLen: (dv, offset) => (number | number);
@@ -88,7 +92,7 @@ export class Scan {
     // NOTE: After decoding the text, it is need to forward extra "tail" bytes according to specified encoding.
     readText() {
         let len = this.searchTextLen(this.dv, this.offset);
-        return [this.decoder.decode(new Uint8Array(this.buf, this.offset, len)), this.forward(len + this.bpu)][0];
+        return [this.decoder.decode(newUint8Array(this.buf, this.offset, len)), this.forward(len + this.bpu)][0];
     }
 
     // Read data to an Uint8Array and decode it to text with specified encoding.
@@ -96,7 +100,7 @@ export class Scan {
     // NOTE: After decoding the text, it is need to forward extra "tail" bytes according to specified encoding.
     readTextSized(len) {
         len *= this.bpu;
-        return [this.decoder.decode(new Uint8Array(this.buf, this.offset, len)), this.forward(len + this.tail)][0];
+        return [this.decoder.decode(newUint8Array(this.buf, this.offset, len)), this.forward(len + this.tail)][0];
     }
 
     // Skip checksum, just ignore it anyway.
@@ -116,17 +120,18 @@ export class Scan {
             // skip comp_type (4 bytes with tailing \x00) and checksum (4 bytes)
             this.offset += 8;
             len -= 8;
-            let tmp = new Uint8Array(this.buf, this.offset, len);
+            let tmp = new Uint8Array(len);
+            this.buf.copy(tmp, 0, this.offset, this.offset + len);
             if (decryptor) {
                 let passkey = new Uint8Array(8);
-                passkey.set(new Uint8Array(this.buf, this.offset - 4, 4));  // key part 1: checksum
+                this.buf.copy(passkey, 0, this.offset - 4, this.offset);// key part 1: checksum
                 passkey.set([0x95, 0x36, 0x00, 0x00], 4);         // key part 2: fixed data
                 tmp = decryptor(tmp, passkey);
             }
 
             tmp = comp_type === 2 ? inflate(tmp) : lzo.decompress(tmp);
             this.forward(len);
-            return this.init(tmp.buffer);
+            return this.init(Buffer.from(tmp));
         }
     }
 
