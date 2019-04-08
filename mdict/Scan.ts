@@ -1,9 +1,6 @@
 import {lzo} from '../lib/lzo1x';
 import {inflate} from 'pako';
-import {newUint8Array} from "./util";
-
-const DataView = require('buffer-dataview');
-const TextDecoder = require('text-encoding').TextDecoder;
+import {isBrowser, newUint8Array, dataView, textDecoder} from "./util";
 
 export class Scan {
     private readonly searchTextLen: (dv, offset) => (number | number);
@@ -36,7 +33,7 @@ export class Scan {
             }
         };
 
-        this.decoder = new TextDecoder(attrs.Encoding || 'UTF-16LE');
+        this.decoder = new textDecoder(attrs.Encoding || 'UTF-16LE');
 
         this.bpu = (attrs.Encoding === 'UTF-16') ? 2 : 1;
 
@@ -64,7 +61,7 @@ export class Scan {
     init(buf) {
         this.offset = 0;
         this.buf = buf;
-        this.dv = new DataView(buf);
+        this.dv = new dataView(buf);
         return this;
     }
 
@@ -117,21 +114,32 @@ export class Scan {
             if (this.v2) this.forward(8);  // for version >= 2, skip comp_type (4 bytes with tailing \x00) and checksum (4 bytes)
             return this;
         } else {
+            let tmp;
             // skip comp_type (4 bytes with tailing \x00) and checksum (4 bytes)
             this.offset += 8;
             len -= 8;
-            let tmp = new Uint8Array(len);
-            this.buf.copy(tmp, 0, this.offset, this.offset + len);
+            if (isBrowser) {
+                tmp = new Uint8Array(this.buf, this.offset, len);
+            } else {
+                tmp = new Uint8Array(len);
+                this.buf.copy(tmp, 0, this.offset, this.offset + len);
+            }
+
             if (decryptor) {
                 let passkey = new Uint8Array(8);
-                this.buf.copy(passkey, 0, this.offset - 4, this.offset);// key part 1: checksum
+                if (isBrowser) {
+                    passkey.set(new Uint8Array(this.buf, this.offset - 4, 4));  // key part 1: checksum
+                } else {
+                    this.buf.copy(passkey, 0, this.offset - 4, this.offset);// key part 1: checksum
+                }
+
                 passkey.set([0x95, 0x36, 0x00, 0x00], 4);         // key part 2: fixed data
                 tmp = decryptor(tmp, passkey);
             }
 
             tmp = comp_type === 2 ? inflate(tmp) : lzo.decompress(tmp);
             this.forward(len);
-            return this.init(Buffer.from(tmp));
+            return this.init(isBrowser ? tmp.buffer : Buffer.from(tmp));
         }
     }
 

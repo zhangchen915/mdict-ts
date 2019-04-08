@@ -1,28 +1,57 @@
 import {HeaderSection} from "./mdict-parser";
-const fs = require('fs');
-const TextDecoder = require('text-encoding').TextDecoder;
+
+export const isBrowser = typeof window !== "undefined" && this === window;
+
+let dataView, textDecoder, parse;
+if (!isBrowser) {
+    dataView = require('buffer-dataview');
+    textDecoder = require('text-encoding').TextDecoder;
+    parse = require('xmldom').DOMParser;
+} else {
+    dataView = DataView;
+    textDecoder = TextDecoder;
+    parse = DOMParser;
+}
+
+export {dataView, textDecoder};
 
 export function resolve(value: any[]) {
     return Promise.resolve(value);
 }
 
 export function newUint8Array(buf, offset, len) {
-    const ret = new Uint8Array(len);
-    buf.copy(ret, 0, offset, offset + len);
-    return ret;
+    if (!isBrowser) {
+        const ret = new Uint8Array(len);
+        buf.copy(ret, 0, offset, offset + len);
+        return ret;
+    } else {
+        return new Uint8Array(buf, offset, len)
+    }
 }
 
+
 export async function readFile(file, offset: number, len: number) {
-    return new Promise(resolve => {
-        fs.open(file, 'r', (err, fd) => {
-            if (err) throw err;
-            const res = Buffer.alloc(len);
-            fs.read(fd, res, 0, len, offset, (err, bytesRead, buffer) => {
+    if (isBrowser) {
+        return new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                resolve(reader.result)
+            };
+            reader.readAsArrayBuffer(file.slice(offset, offset + len));
+        });
+    } else {
+        const fs = require('fs');
+        return new Promise(resolve => {
+            fs.open(file, 'r', (err, fd) => {
                 if (err) throw err;
-                resolve(buffer);
+                const res = Buffer.alloc(len);
+                fs.read(fd, res, 0, len, offset, (err, bytesRead, buffer) => {
+                    if (err) throw err;
+                    resolve(buffer);
+                });
             });
         });
-    });
+    }
 }
 
 export const getExtension = filename => /(?:\.([^.]+))?$/.exec(filename)[1];
@@ -32,13 +61,17 @@ export const REGEXP_STRIPKEY = {
     'mdd': /([.][^.]*$)|[()., '/\\@_-]/g        // strip '.' before file extension that is keeping the last period
 };
 
+export function parseXml(xml) {
+    return new parse().parseFromString(xml, 'text/xml');
+}
+
 export function isTrue(v) {
     v = ((v || false) + '').toLowerCase();
     return v === 'yes' || v === 'true';
 }
 
 export function readUTF16(buf, len) {
-    return new TextDecoder('utf-16le').decode(newUint8Array(buf, 0, len));
+    return new textDecoder('utf-16le').decode(newUint8Array(buf, 0, len));
 }
 
 export function getAdaptKey(attrs: HeaderSection, ext) {

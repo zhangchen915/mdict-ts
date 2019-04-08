@@ -28,7 +28,7 @@ import {
     createRecordBlockTable,
     getExtension,
     readUTF16,
-    getGlobalStyle
+    getGlobalStyle, parseXml, dataView
 } from './util'
 import {
     decrypt
@@ -39,9 +39,6 @@ import {
 import {
     Mdict
 } from './mdict'
-
-const DataView = require('buffer-dataview');
-const DOMParser = require('xmldom').DOMParser;
 
 export interface HeaderSection {
     GeneratedByEngineVersion: string;
@@ -97,12 +94,12 @@ export class MDictParser {
         this.read = readFile.bind(null, this.file);
 
         this.read(0, 4).then(async (data: ArrayBuffer) => {
-            const headerLength = new DataView(data).getUint32(0);
+            const headerLength = new dataView(data).getUint32(0);
             const res = await this.read(4, headerLength + 48);
             const headerRemainLen = await this.read_header_sect(res, headerLength);
             pos += headerRemainLen + 4;
             return this.read_keyword_summary(res, headerRemainLen);
-            }).then(async (keyword: Keyword) => {
+        }).then(async (keyword: Keyword) => {
             pos += keyword.len;
             const res = await this.read(pos, keyword.key_index_comp_len);
             this.KEY_INDEX = await this.read_keyword_index(res, keyword);
@@ -127,9 +124,7 @@ export class MDictParser {
      */
     private read_header_sect(input: any, len: number) {
         let header_str = readUTF16(input, len).replace(/\0$/, ''); // need to remove tailing NUL
-        // parse dictionary attributes
-        // let xml = parseXml(header_str).getAttribute('Dictionary, Library_Data');
-        const doc = new DOMParser().parseFromString(header_str, 'text/xml');
+        const doc = parseXml(header_str);// parse dictionary attributes
         let xml = doc.getElementsByTagName('Dictionary')[0];
         if (!xml) xml = doc.getElementsByTagName('Library_Data')[0];
         let attrs: HeaderSection = {
