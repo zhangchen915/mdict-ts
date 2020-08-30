@@ -1,6 +1,6 @@
 import {HeaderSection} from "./mdict-parser";
 
-export const isBrowser = typeof window !== "undefined" && this === window;
+export const isBrowser = typeof window !== "undefined";
 
 let dataView, textDecoder, parse;
 if (!isBrowser) {
